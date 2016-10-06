@@ -76,9 +76,10 @@ np.random.shuffle(random_index)
 age = age[random_index]
 data = data[random_index]
 
+train_age_target = convert_to_age_group(age)
+
 rf = RandomForestClassifier(n_estimators=1000)
-cross_val_score(rf, data, age, cv=5)
-
-rf.fit(train_set, train_age_target)
-
-
+cv = cross_val_score(rf, data, train_age_target, cv=10)
+print(cv)
+print(cv.mean())
+print('latest')
