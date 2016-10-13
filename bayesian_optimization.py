@@ -107,7 +107,6 @@ def dnncv(h1, h2, h3, h4,
         optimizer=tf.train.ProximalAdagradOptimizer(
             learning_rate=learning_rate),
         dropout=dropout    
-        )
         ),
     data, train_age_target, cv=10, n_jobs=-1).mean()
 
