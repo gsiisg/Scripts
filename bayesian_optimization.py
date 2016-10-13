@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 
-#import tensorflow as tf
+import tensorflow as tf
 import logging
 logging.getLogger().setLevel(logging.INFO)
 #import xgboost
@@ -84,9 +84,53 @@ data = data[random_index]
 
 train_age_target = convert_to_age_group(age)
 
+'''
 def svccv(C, gamma):
     return cross_val_score(SVC(C=C, gamma=gamma, random_state=2),
                            data, train_age_target, cv=10).mean()
+
+svcBO = BayesianOptimization(svccv, {'C': (0.001, 1000),
+                                     'gamma': (0.0001, 0.1)})
+svcBO.explore({'C': [0.001, 0.01, 0.1, 1.0], 'gamma': [0.001, 0.01, 0.1, 1.0]})
+svcBO.maximize(init_points=10, n_iter=40)
+print('SVC: %f' % svcBO.res['max']['max_val'])
+'''
+feature_columns = [tf.contrib.layers.real_valued_column("", dimension=10)]
+
+def dnncv(h1, h2, h3, h4,
+          learning_rate, dropout):
+    return cross_val_score(
+        tf.contrib.learn.DNNClassifier(
+        feature_columns=feature_columns,
+        hidden_units=[h1, h2, h3, h4],
+        n_classes=3,
+        optimizer=tf.train.ProximalAdagradOptimizer(
+            learning_rate=learning_rate),
+        dropout=dropout    
+        )
+        ),
+    data, train_age_target, cv=10, n_jobs=-1).mean()
+
+dnnBO = BayesianOptimization(dnncv, {'h1': (10, 100),
+                                     'h2': (10, 100),
+                                     'h3': (10, 100),
+                                     'h4': (10, 100),
+                                     'learning_rate': (1e-4,1e-1),
+                                     'dropout':(0.1,0.9),
+})
+
+dnnBO.explore({'h1': [20, 50],
+               'h2': [20, 50],
+               'h3': [20, 50],
+               'h4': [20, 50],
+               'learning_rate': [1e-3,1e-2],
+               'dropout': [.3,.6],
+})
+
+dnnBO.maximize(init_points=12, n_iter=40)
+
+print('DNN: %f' % dnnBO.res['max']['max_val']) 
+
 '''
 def rfccv(n_estimators, min_samples_split, max_features):
     return cross_val_score(RFC(n_estimators=int(n_estimators),
@@ -107,11 +151,6 @@ rfcBO.maximize(init_points=10, n_iter=20)
 print('RFC: %f' % rfcBO.res['max']['max_val'])
 '''
 
-svcBO = BayesianOptimization(svccv, {'C': (0.001, 1000),
-                                     'gamma': (0.0001, 0.1)})
-svcBO.explore({'C': [0.001, 0.01, 0.1, 1.0], 'gamma': [0.001, 0.01, 0.1, 1.0]})
-svcBO.maximize(init_points=10, n_iter=40)
-print('SVC: %f' % svcBO.res['max']['max_val'])
 #print(cv)
 #print(cv.mean())
 #print('latest')
