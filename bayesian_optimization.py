@@ -59,6 +59,25 @@ def convert_to_age_group(target):
             age_group.append(2)
     return np.array(age_group).astype(np.int32)
 
+def my_cross_val_score(classifier, data, target, kfolds=10):
+    cumulative_accuracy = np.array([])
+    for i in range(kfolds):
+        train_set = np.concatenate((data[:i*test_size],
+                                    data[(i+1)*test_size:]),
+                                    axis=0)
+        train_target = np.concatenate((target[:i*test_size],
+                                       target[(i+1)*test_size:]),
+                                       axis=0)
+        test_set = data[i * test_size:(i+1) * test_size]
+        test_target = target[i * test_size:(i+1) * test_size]
+
+        # do prediction on test set
+        prediction = classifier.fit(train_set, train_age_target)
+        accuracy = accuracy_score(test_target, prediction)
+        cumulative_accuracy = np.append(cumulative_accuracy,accuracy)
+    return cumulative_accuracy
+
+
 data = convert_to_onehot(df)
 
 # define answer
@@ -99,7 +118,7 @@ feature_columns = [tf.contrib.layers.real_valued_column("", dimension=10)]
 
 def dnncv(h1, h2, h3, h4,
           learning_rate, dropout):
-    return cross_val_score(
+    return my_cross_val_score(
         tf.contrib.learn.DNNClassifier(
         feature_columns=feature_columns,
         hidden_units=[h1, h2, h3, h4],
@@ -108,7 +127,7 @@ def dnncv(h1, h2, h3, h4,
             learning_rate=learning_rate),
         dropout=dropout    
         ),
-    data, train_age_target, cv=10, n_jobs=-1).mean()
+    data, train_age_target, kfolds=10).mean()
 
 dnnBO = BayesianOptimization(dnncv, {'h1': (10, 100),
                                      'h2': (10, 100),
