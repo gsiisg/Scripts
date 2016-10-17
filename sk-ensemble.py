@@ -101,7 +101,10 @@ target = convert_to_age_group(age)
 
 #---- SVM ---------------------------
 def svccv(C, gamma):
-    return cross_val_score(SVC(C=C, gamma=gamma, random_state=2),
+    return cross_val_score(SVC(C=C,
+                               gamma=gamma,
+                               random_state=None,
+                               probability=True),
                            data, target, cv=10).mean()
 
 svcBO = BayesianOptimization(svccv, {'C': (0.001, 1000),
@@ -114,30 +117,74 @@ print('SVC: %f' % svcBO.res['max']['max_val'])
 def xgbcv(learning_rate, n_estimators):
     return cross_val_score(xgboost.XGBClassifier(
                            learning_rate=learning_rate,
-                           n_estimators=n_estimators),
+                           n_estimators=int(n_estimators)),
                            data, target, cv=10).mean()
 
-xgbBO = BayesianOptimization(xgbcv, {'learning_rate': (1e-4, 1e-1),
-                                     'n_estimators': (100, 2000)})
-xgbBO.explore({'learning_rate': [1e-4, 5e-2, 1e-1],
-               'n_estimators': [100,800,2000]})
+xgbBO = BayesianOptimization(xgbcv, {'learning_rate': (0.0001, 1.0),
+                                     'n_estimators': (100, 1000)})
+xgbBO.explore({'learning_rate': [0.0001, 0.001, 0.1],
+               'n_estimators': [200,500,800]})
 xgbBO.maximize(init_points=10, n_iter=20)
-print('SVC: %f' % svcBO.res['max']['max_val'])
+print('XGB: %f' % xgbBO.res['max']['max_val'])
 
 
+#---- skDNN ---------------------------------
+def skdnncv(h1, h2, learning_rate_init):
+    return cross_val_score(MLPClassifier(solver='adam',
+                                         alpha=1e-5,
+                                         batch_size='auto',
+                                         hidden_layer_sizes=(int(h1), int(h2)),
+                                         learning_rate='adaptive',
+                                         learning_rate_init=learning_rate_init),
+                           data, target, cv=10).mean()
+skdnnBO = BayesianOptimization(skdnncv, {'h1': (10, 100),
+                                         'h2': (10, 100),
+                                         'learning_rate_init': (.0001,.1)})
+skdnnBO.explore({'h1': [10,90],
+                 'h2': [10,90],
+                 'learning_rate_init': [0.001, 0.01]})
+skdnnBO.maximize(init_points=10, n_iter=20)
+print('SKDNN: %f' % skdnnBO.res['max']['max_val'])
 
+#---- set classifiers to be combined for voting -------------
+SVM = SVC(**svcBO.res['max']['max_params'], random_state=None, probability=True)
+XGB = xgboost.XGBClassifier(learning_rate =
+                            xgbBO.res['max']['max_params']['learning_rate'],
+                            n_estimators =
+                            int(xgbBO.res['max']['max_params']['n_estimators']))
+SKDNN = MLPClassifier(solver='adam',
+                      alpha=1e-5,
+                      batch_size='auto',
+                      hidden_layer_sizes=(
+                          int(skdnnBO.res['max']['max_params']['h1']),
+                          int(skdnnBO.res['max']['max_params']['h2'])),
+                      learning_rate='adaptive',
+                      learning_rate_init =
+                      skdnnBO.res['max']['max_params']['learning_rate_init'])
 
+hardVC = VotingClassifier(estimators=[('SVM',SVM),('XGB',XGB),('SKDNN',SKDNN)],
+                          voting='hard')
+# need to have SVM set probability=True for soft voting to work
+softVC = VotingClassifier(estimators=[('SVM',SVM),('XGB',XGB),('SKDNN',SKDNN)],
+                          voting='soft')
+SVMaccuracy, XGBaccuracy, SKDNNaccuracy = (svcBO.res['max']['max_val'],
+                                           xgbBO.res['max']['max_val'],
+                                           skdnnBO.res['max']['max_val'])
 
-        
-model.fit(train_set, train_age_target)
+weightVC = VotingClassifier(estimators=[('SVM',SVM),
+                                        ('XGB',XGB),
+                                        ('SKDNN',SKDNN)],
+                            voting='soft',
+                            weights=[SVMaccuracy,
+                                     XGBaccuracy,
+                                     SKDNNaccuracy])
 
-
-
-'''
-DNN = MLPClassifier(solver='adam', alpha=1e-5, batch_size='auto',
-                    hidden_layer_sizes=(20, 20), random_state=1,
-                    learning_rate='adaptive',learning_rate_init=1e-3)
-cv = cross_val_score(DNN, data, target, cv=cv_fold)
-
-print(cv.mean())
-'''
+hardAccuracy = cross_val_score(hardVC, data, target, cv=10).mean()
+softAccuracy = cross_val_score(softVC, data, target, cv=10).mean()
+weightAccuracy = cross_val_score(weightVC, data, target, cv=10).mean()
+print('SVM:', SVMaccuracy)
+print('XGB:', XGBaccuracy)
+print('SKDNN:', SKDNNaccuracy)
+print('hard:', hardAccuracy)
+print('soft:', softAccuracy)
+print('weight:', weightAccuracy)
