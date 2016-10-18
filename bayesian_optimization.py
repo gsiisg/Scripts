@@ -59,9 +59,10 @@ def convert_to_age_group(target):
             age_group.append(2)
     return np.array(age_group).astype(np.int32)
 
-def my_cross_val_score(classifier, data, target, kfolds=10):
+def my_cross_val_score(classifier, data, target, cv):
     cumulative_accuracy = np.array([])
-    for i in range(kfolds):
+    for i in range(cv):
+        tmpclf = np.copy([classifier])
         train_set = np.concatenate((data[:i*test_size],
                                     data[(i+1)*test_size:]),
                                     axis=0)
@@ -72,10 +73,13 @@ def my_cross_val_score(classifier, data, target, kfolds=10):
         test_target = target[i * test_size:(i+1) * test_size]
 
         # do prediction on test set
-        prediction = classifier.fit(train_set, train_age_target)
+        tmpclf[0].fit(train_set, train_age_target, steps=1000)
+        prediction = tmpclf[0].predict(test_set)
         accuracy = accuracy_score(test_target, prediction)
+        print('accuracy', accuracy)
         cumulative_accuracy = np.append(cumulative_accuracy,accuracy)
     return cumulative_accuracy
+
 
 
 data = convert_to_onehot(df)
@@ -92,7 +96,8 @@ data = data.values
 
 # define index that separate train from test
 data_length = len(data)
-test_size = int(len(data) * 0.1)
+cv=10
+test_size = int(len(data) * 1.0/cv)
 
 # randomize the order of the data
 np.random.seed(123456)
@@ -116,31 +121,37 @@ print('SVC: %f' % svcBO.res['max']['max_val'])
 '''
 feature_columns = [tf.contrib.layers.real_valued_column("", dimension=10)]
 
-def dnncv(h1, h2, h3, h4,
+def dnncv(h1, h2,
+          #h3, h4,
           learning_rate, dropout):
     return my_cross_val_score(
+    #return cross_val_score(
         tf.contrib.learn.DNNClassifier(
         feature_columns=feature_columns,
-        hidden_units=[h1, h2, h3, h4],
+        hidden_units=[int(h1),
+                      int(h2),
+                      #int(h3),
+                      #int(h4)
+                      ],
         n_classes=3,
         optimizer=tf.train.ProximalAdagradOptimizer(
             learning_rate=learning_rate),
-        dropout=dropout    
+        dropout=dropout
         ),
-    data, train_age_target, kfolds=10).mean()
+    data, train_age_target, cv=10).mean()
 
 dnnBO = BayesianOptimization(dnncv, {'h1': (10, 100),
                                      'h2': (10, 100),
-                                     'h3': (10, 100),
-                                     'h4': (10, 100),
+#                                     'h3': (10, 100),
+#                                     'h4': (10, 100),
                                      'learning_rate': (1e-4,1e-1),
                                      'dropout':(0.1,0.9),
 })
 
 dnnBO.explore({'h1': [20, 50],
                'h2': [20, 50],
-               'h3': [20, 50],
-               'h4': [20, 50],
+               #'h3': [20, 50],
+               #'h4': [20, 50],
                'learning_rate': [1e-3,1e-2],
                'dropout': [.3,.6],
 })
