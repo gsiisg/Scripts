@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 
 df1=pd.read_csv('data_mining_test_1.csv')
 
-print('any data null ', df.isnull().values.any())
+print('any data null ', df1.isnull().values.any())
 
 # plot histogram
 
