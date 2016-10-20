@@ -71,12 +71,11 @@ def plot_confusion_matrix(cm, classes,
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
 
-def plot_roc_curve():
-    
+def plot_roc_curve(fpr,tpr,roc_auc_value):
     plt.figure()
     lw = 2
-    plt.plot(fpr[2], tpr[2], color='darkorange',
-             lw=lw, label='ROC curve (area = %0.2f)' % roc_auc[2])
+    plt.plot(fpr, tpr, color='darkorange',
+             lw=lw, label='ROC curve (area = %0.2f)' % roc_auc_value)
     plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
@@ -85,8 +84,47 @@ def plot_roc_curve():
     plt.title('Receiver operating characteristic example')
     plt.legend(loc="lower right")
     plt.show()
+    
+def my_cross_val_score(classifier, data, target, cv=10):
+    cumulative_score = np.array([])
+    test_size = int(1.0*len(target)/cv)
+    for i in range(cv):
+        train_data = np.concatenate((data[:i*test_size],
+                                    data[(i+1)*test_size:]),
+                                    axis=0)
+        train_target = np.concatenate((target[:i*test_size],
+                                       target[(i+1)*test_size:]),
+                                       axis=0)
+        test_data = data[i * test_size:(i+1) * test_size]
+        test_target = target[i * test_size:(i+1) * test_size]
+        
+        # do prediction on test set
+        classifier.fit(train_data, train_target)
+        prediction = classifier.predict(test_data)
+        #generate_metrics(classifier,train_data,train_target,test_data,test_target)
+        precision = precision_score(test_target, prediction)
+        recall = recall_score(test_target, prediction)
+        print(test_target, prediction)
+        print('precision,recall:',precision,recall)
+        cumulative_score = np.append(cumulative_score,precision+recall)
+    return cumulative_score
 
-
+def generate_metrics(classifier, data, target, test_data, test_target):
+    classifier.fit(data, target)
+    prediction = classifier.predict(test_data)
+    # probability
+    prob = classifier.predict_proba(test_data)[:,0]
+    confusionMatrix = confusion_matrix(test_target, prediction)
+    precision = precision_score(test_target, prediction)
+    recall = recall_score(test_target, prediction)
+    roc_auc_value = roc_auc_score(test_target, prob)
+    fpr, tpr, _ = roc_curve(test_target, prob)
+    plot_roc_curve(fpr,tpr,roc_auc_value)
+    print('precision, recall, roc_auc:', precision, recall, roc_auc)
+    plot_confusion_matrix(confusionMatrix,
+                          classes=['0','1'],
+                          title='Confusion Matrix')
+    
 #---- start program -----------------------
 
 df1=pd.read_csv('data_mining_test_1.csv')
@@ -98,14 +136,16 @@ df1=pd.read_csv('data_mining_test_1.csv')
 #       [2410],
 #       [2485]])
 CTR = (df1['Click'].values/df1['Impression'].values)
-target = 1.0*(df1['Click'].values>0)
+target = (1.0*(df1['Click'].values>0)).astype(int)
 df1.drop('Click',axis=1,inplace=True)
 data = convert_to_onehot(df1)
 column_names = np.array(list(data.columns)).astype(str)
+# try getting rid of Campaign
+#data = df1.drop('A',axis=1,inplace=False)
 data = data.values
 
 # randomize the order of the data
-np.random.seed(123456)
+np.random.seed(12345)
 data_length = len(data)
 random_index = np.arange(data_length)
 np.random.shuffle(random_index)
@@ -125,29 +165,19 @@ train_target = np.concatenate((target[:i*test_size],
 test_data = data[i * test_size:(i+1) * test_size]
 test_target = target[i * test_size:(i+1) * test_size]
 
-#---- set over sample -----------------
-
-def generate_metrics(classifier, data, target, test_data, test_target):
-    classifier.fit(data, target)
-    prediction = classifier.predict(test_data)
-    confusionMatrix = confusion_matrix(test_target, prediction)
-    precision = precision_score(test_target, prediction)
-    recall = recall_score(test_target, prediction)
-    roc_auc = roc_auc_score(test_target, prediction)
-    fpr, tpr, _ = roc_curve(test_target, prediction)
-    print(fpr,tpr)
-    print('precision, recall, roc_auc:', precision, recall, roc_auc)
-    plot_confusion_matrix(confusionMatrix,
-                          classes=['0','1'],
-                          title='Confusion Matrix')
-
 us_train_data, us_train_target = RUS().fit_sample(train_data, train_target)
 os_train_data, os_train_target = ROS().fit_sample(train_data, train_target)
 
-RF = RFC(n_estimators = 10000, max_features = 0.8)
-generate_metrics(RF, us_train_data, us_train_target, test_data, test_target)
-#generate_metrics(RF, os_train_data, os_train_target, test_data, test_target)
+#us_data, us_target = RUS().fit_sample(data, target)
+#os_data, os_target = ROS().fit_sample(data, target)
 
+#---- set over sample -----------------
+
+RF = RFC(n_estimators = 10000, n_jobs=4, random_state=9999, max_features=2)
+generate_metrics(RF, os_train_data, os_train_target, test_data, test_target)
+#generate_metrics(RF, os_train_data, os_train_target, test_data, test_target)
+my_cross_val_score(RFC(n_estimators=10000, max_features=2, n_jobs=4),
+                           us_train_data, us_train_target, cv=10).mean()
 
 
 SVM = SVC(C=10,
@@ -156,8 +186,9 @@ SVM = SVC(C=10,
           probability=True)
 generate_metrics(SVM, os_train_data, os_train_target, test_data, test_target)
 
-XGB = xgboost.XGBClassifier(learning_rate = 1e-3,
-                            n_estimators =10000)
+XGB = xgboost.XGBClassifier(learning_rate=1e-3,
+                            n_estimators=10000,
+                            seed=9999)
 generate_metrics(XGB, os_train_data, os_train_target, test_data, test_target)
 
 
@@ -169,3 +200,20 @@ SKDNN = MLPClassifier(solver='adam',
                       learning_rate_init = 1e-2)
 generate_metrics(SKDNN, os_train_data, os_train_target, test_data, test_target)
 
+#--- XGB ensemble ----------------------
+negpos = 1.0*(len(target)-target.sum())/target.sum()
+def xgbcv(learning_rate, n_estimators):
+    return my_cross_val_score(xgboost.XGBClassifier(learning_rate=
+                                                    10**learning_rate,
+                                                    n_estimators=int(n_estimators),
+                                                    #scale_pos_weight=negpos
+                                                    seed=9999
+                                                    ),
+                              os_train_data, os_train_target, cv=10).mean()
+
+xgbBO = BayesianOptimization(xgbcv, {'learning_rate': (-4, -1),
+                                     'n_estimators': (100, 1000)})
+xgbBO.explore({'learning_rate': [-6, -3.5, -1],
+               'n_estimators': [100,500,1000]})
+xgbBO.maximize(init_points=10, n_iter=40)
+print('XGB: %f' % xgbBO.res['max']['max_val'])

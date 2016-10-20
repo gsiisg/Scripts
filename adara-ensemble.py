@@ -12,8 +12,8 @@ from sklearn.linear_model import LogisticRegression as LR
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier as DTC
 import xgboost
-from imblearn.over_sampling import RandomOverSampler as ROS
-from imblearn.under_sampling import RandomUnderSampler as RUS
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 
 #---- function definitions ---------------
 
